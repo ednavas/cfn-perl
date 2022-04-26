@@ -93,6 +93,9 @@ sub toposort
 {
     my ($deps, $in) = @_;
 
+    # Cycle limit in case of circular reference
+    my $max_cycles = 10000;
+
     # Assign the depth of traversal.
     my %depth;
     {
@@ -101,6 +104,8 @@ sub toposort
 
         # While there are still items to traverse,
         while ( @stack ) {
+            last if --$max_cycles == 0;
+
             # Pop the top item and the current traversal depth.
             my $q = pop @stack;
             my $x = $q->[0];
@@ -109,21 +114,11 @@ sub toposort
             # Remember current depth.
             if ( (! defined $depth{$x}) || $depth{$x} < $d ) {
                 $depth{$x} = $d;
-                # warn "$x depth = $d";
             }
 
             # Push the next items along the graph, remembering the depth they were found at.
-            my @depa;
-            for my $item ($deps->($x)) {
-                # only push items not yet proccessed
-                if (grep { $_ eq $item } keys %depth) {
-                    # still need to change depth for proccessed items
-                    $depth{$item} = $d + 1;
-                } else {
-                    push @depa, $item;
-                }
-            };
-            unshift(@stack, map([ $_, $d + 1 ], @depa));
+            my @depa = $deps->($x);
+            unshift(@stack, reverse map([ $_, $d + 1 ], @depa));
         }
     }
 
@@ -139,6 +134,12 @@ sub toposort
         $depth{$a} <=> $depth{$b} ||
         $order{$a} <=> $order{$b}
     } @$in;
+
+    if ($max_cycles == 0) {
+        my $def_name = $out[$#out];
+        $def_name =~ s/::\w+$//;
+        print "$def_name has circular reference(s)\n";
+    }
 
     # Return array or array ref.
     wantarray ? @out : \@out;
